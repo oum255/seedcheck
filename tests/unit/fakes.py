@@ -17,13 +17,14 @@ class FakeLxdClient:
     - launch_errors / ready_errors: image -> exception raised by launch / wait_ready
     - exec_results: argv tuple -> ExecResult or exception, for any container
     - files: remote path -> content returned by pull_file
-    - interrupt_on_launch: image whose launch raises KeyboardInterrupt
+    - unavailable: exception raised by ensure_available
     """
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.alive: dict[str, str] = {}  # container name -> image
         self.user_data: dict[str, str] = {}
+        self.unavailable: BaseException | None = None
         self.launch_errors: dict[str, BaseException] = {}
         self.ready_errors: dict[str, BaseException] = {}
         self.exec_results: dict[tuple[str, ...], ExecResult | BaseException] = {
@@ -33,6 +34,11 @@ class FakeLxdClient:
             "/var/log/cloud-init.log": "cloud-init log\n",
             "/var/log/cloud-init-output.log": "cloud-init output\n",
         }
+
+    def ensure_available(self) -> None:
+        self.calls.append(("ensure_available",))
+        if self.unavailable is not None:
+            raise self.unavailable
 
     def launch(self, image: str, name: str, user_data_text: str) -> None:
         self.calls.append(("launch", image, name))
