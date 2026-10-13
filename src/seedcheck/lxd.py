@@ -25,6 +25,8 @@ GROUP_HINT = "add yourself to the lxd group (sudo usermod -aG lxd $USER), then l
 # Generous: the first launch of a release downloads its image.
 LAUNCH_TIMEOUT = 600
 QUICK_TIMEOUT = 30
+# How long delete() waits for an interrupted launch (possibly an image download) to end.
+DELETE_BUSY_TIMEOUT = 300
 
 
 @dataclass(frozen=True)
@@ -157,10 +159,21 @@ class LxdClient:
             raise LxdError(f"could not copy {remote_path} out of {name}: {_first_error(proc)}")
 
     def delete(self, name: str) -> None:
-        """Force-delete a container; a container that is already gone is not an error."""
-        proc = self._run(["delete", "--force", name], timeout=QUICK_TIMEOUT * 4)
-        if proc.returncode != 0 and "not found" not in proc.stderr.lower():
-            raise LxdError(f"could not delete container {name}: {_first_error(proc)}")
+        """Force-delete a container; a container that is already gone is not an error.
+
+        If a launch was interrupted (Ctrl+C), LXD keeps creating the container
+        server-side and refuses to delete it while it is "busy", so retry once
+        a second until that operation ends.
+        """
+        deadline = self.clock() + DELETE_BUSY_TIMEOUT
+        while True:
+            proc = self._run(["delete", "--force", name], timeout=QUICK_TIMEOUT * 4)
+            stderr = proc.stderr.lower()
+            if proc.returncode == 0 or "not found" in stderr:
+                return
+            if "busy" not in stderr or self.clock() >= deadline:
+                raise LxdError(f"could not delete container {name}: {_first_error(proc)}")
+            self.sleep(1)
 
 
 def _first_error(proc: subprocess.CompletedProcess[str]) -> str:

@@ -240,3 +240,29 @@ def test_error_message_falls_back_to_last_line_or_exit_code(
     proc.add(1, stderr="")
     with pytest.raises(LxdError, match="could not launch img: exit code 1"):
         client.launch("img", "c1", "")
+
+
+BUSY = (
+    'Error: Failed deleting instance "c1" in project "default": Failed creating instance '
+    'delete operation: Instance is busy running a "create" operation\n'
+)
+
+
+def test_delete_waits_for_an_interrupted_launch_to_finish(
+    proc: FakeSubprocess, client: LxdClient
+) -> None:
+    # Regression: Ctrl+C during `lxc launch` left LXD still creating the
+    # container, so the cleanup delete failed and the container leaked.
+    proc.add(1, stderr=BUSY)
+    proc.add(1, stderr=BUSY)
+    proc.add(0)
+    client.delete("c1")
+    assert proc.argvs == [["lxc", "delete", "--force", "c1"]] * 3
+
+
+def test_delete_gives_up_if_the_container_stays_busy(
+    proc: FakeSubprocess, client: LxdClient
+) -> None:
+    proc.outcomes = [(1, "", BUSY)] * 1000
+    with pytest.raises(LxdError, match="Instance is busy"):
+        client.delete("c1")
