@@ -288,3 +288,20 @@ def test_ctrl_c_during_cleanup_is_retried_by_run_all(client: FakeLxdClient, conf
         run_all(client, config, OPTIONS, progress=quiet)
     assert interrupted == client.names("launch")
     assert not client.alive
+
+
+def test_errored_release_shows_every_planned_check_as_skip(
+    client: FakeLxdClient, config: Config
+) -> None:
+    client.ready_errors["ubuntu:24.04"] = TimeoutError_("container was not ready after 600s")
+    result = run_release(client, resolve("24.04"), config, OPTIONS, progress=quiet)
+    assert [(c.name, c.status) for c in result.checks] == [
+        ("schema", Status.SKIP),
+        ("cloud-init", Status.SKIP),
+    ]
+    assert result.checks[0].detail == "not run: timed out: container was not ready after 600s"
+
+
+def test_default_check_fn_runs_the_real_checks(client: FakeLxdClient, config: Config) -> None:
+    result = run_release(client, resolve("24.04"), config, OPTIONS, progress=quiet)
+    assert [c.name for c in result.checks] == ["schema", "cloud-init"]

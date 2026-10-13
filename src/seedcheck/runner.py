@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from seedcheck import __version__
+from seedcheck.checks import run_checks, skipped
 from seedcheck.config import Config
 from seedcheck.errors import SeedcheckError, TimeoutError_
 from seedcheck.lxd import Lxd
@@ -36,10 +37,6 @@ def _stderr_progress(message: str) -> None:
     print(message, file=sys.stderr, flush=True)
 
 
-def _no_checks(client: Lxd, container: str, config: Config) -> list[CheckResult]:
-    return []
-
-
 def container_name(release: Release) -> str:
     """A unique name, so two runs at the same time never collide."""
     return f"seedcheck-{release.codename}-{secrets.token_hex(3)}"
@@ -51,7 +48,7 @@ def run_release(
     config: Config,
     options: RunOptions,
     *,
-    check_fn: CheckFn = _no_checks,
+    check_fn: CheckFn = run_checks,
     progress: ProgressFn = _stderr_progress,
     created: list[str] | None = None,
 ) -> ReleaseResult:
@@ -107,6 +104,10 @@ def run_release(
             created.remove(name)
         result.duration_s = round(time.monotonic() - started, 1)
 
+    if result.error:
+        # The release never got to (or through) its checks: show them all as SKIP.
+        result.checks = skipped(config, f"not run: {result.error}")
+
     say(f"{result.status.value}" + (f": {result.error}" if result.error else ""))
     return result
 
@@ -116,7 +117,7 @@ def run_all(
     config: Config,
     options: RunOptions,
     *,
-    check_fn: CheckFn = _no_checks,
+    check_fn: CheckFn = run_checks,
     progress: ProgressFn = _stderr_progress,
 ) -> RunResult:
     """Run every release in turn; one release failing never stops the next."""
