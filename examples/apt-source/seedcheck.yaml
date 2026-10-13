@@ -1,0 +1,20 @@
+# Adds the git-core Launchpad PPA with cloud-init's apt module, installs git
+# from it, and checks that the PPA build (not Ubuntu's own) is what got installed.
+user_data: user-data.yaml
+
+checks:
+  packages:
+    - git
+  commands:
+    - name: git comes from the PPA
+      # PPA builds carry "ppa" in their version, e.g. 1:2.55.0-0ppa1~ubuntu24.04.2
+      run: dpkg-query -W -f='${Version}' git
+      expect_stdout_contains: ppa
+    - name: PPA source is configured
+      # Do not assume one location: Ubuntu's own sources live in sources.list on
+      # 22.04 but in deb822 sources.list.d/ubuntu.sources from 24.04 on.
+      run: grep -rl ppa.launchpadcontent.net/git-core /etc/apt/sources.list /etc/apt/sources.list.d/
+      expect_exit: 0
+    - name: apt sees the PPA
+      run: apt-cache policy git
+      expect_stdout_contains: ppa.launchpadcontent.net/git-core

@@ -1,0 +1,15 @@
+# A configuration that is meant to fail, to show what a red matrix looks like.
+user_data: user-data.yaml
+
+checks:
+  packages:
+    - curl                          # passes everywhere
+    - this-package-does-not-exist   # fails everywhere
+  files:
+    - path: /etc/seedcheck-demo.conf
+      mode: "0644"                  # user-data writes it as 0600, so this fails
+      contains: demo=true
+  commands:
+    - name: python3 is 3.12
+      run: python3 --version        # 3.10 on 22.04, 3.12 on 24.04, 3.14 on 26.04
+      expect_stdout_contains: Python 3.12

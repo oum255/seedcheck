@@ -1,0 +1,8 @@
+#cloud-config
+packages:
+  - curl
+write_files:
+  - path: /etc/seedcheck-demo.conf
+    content: |
+      demo=true
+    permissions: "0600"
