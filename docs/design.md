@@ -30,6 +30,15 @@ Verified during Phase 1, 2026-10-13:
 |---|---|
 | The package installs and its checks pass on the oldest supported Python | Confirmed inside a fresh `ubuntu:22.04` container (Python 3.10.12): `pip install -e ".[dev]"`, `seedcheck --version`, `ruff check .`, `mypy src` and `pytest` all succeed. |
 
+Verified during Phase 2, 2026-10-13, against the host's cloud-init
+`26.1-0ubuntu1~24.04.1`:
+
+| Fact | Result |
+|---|---|
+| `cloud-init schema --config-file PATH` works without root | Yes, but when not run as root it prints `WARNING` log lines (it cannot read `/var/lib/cloud/instance/obj.pkl`) before its verdict. It exits 0 and prints `Valid schema PATH` on success, and exits 1 on failure. |
+| Format of host schema errors | All schema errors arrive on one line, `Error: Cloud config schema errors: KEY: MESSAGE, KEY: MESSAGE`, followed by `Error: Invalid schema: user-data`. `userdata.py` keeps only the first kind of line, so log noise never reaches the user. The messages themselves contain commas, so they are not split further. |
+| User-data headers cloud-init accepts | cloud-init's own error for a missing header lists `#!`, `## template: jinja`, `#cloud-boothook`, `#cloud-config`, `#cloud-config-archive`, `#cloud-config-jsonp`, `#include`, `#include-once` and `#part-handler`; `userdata.py` recognizes the same set (plus MIME multi-part). |
+
 Still to verify in later phases: `cloud-init.user-data` config key acceptance
 (phase 3), `cloud-init status --long --format json` field shape across
 releases (phase 3/4), `cloud-init schema --system` (phase 4).
@@ -71,3 +80,23 @@ a bug in Seedcheck's own timeout handling. `runner.py`'s per-release
 timeout (phase 3) already bounds this: a release that never becomes
 ready is reported as `ERROR` after the configured timeout, rather than
 hanging Seedcheck itself.
+
+## Static validation (`seedcheck validate`)
+
+Validation runs in two layers before any container is launched, so a
+mistake costs milliseconds instead of a three-release run:
+
+1. `config.py` checks `seedcheck.yaml` itself. Unknown keys are refused
+   (with a "did you mean" suggestion, since a typo such as `package:`
+   would otherwise silently disable a whole category of checks), and
+   every error names the exact key path, e.g. `checks.files[0].mode`.
+   Release numbers and file modes must be quoted strings: YAML 1.1 reads
+   an unquoted `0644` as the octal number 420, and an unquoted `24.10`
+   as the float 24.1.
+2. `userdata.py` checks the user-data file: readable UTF-8, the
+   `#cloud-config` header (without it cloud-init silently ignores the
+   file), and a YAML mapping body. If cloud-init is installed on the
+   host, its `schema` command is run too. That host check is
+   best-effort: the host's cloud-init may be older or newer than the
+   one in each release, which is why every release also gets its own
+   in-container `schema` check (phase 4).
