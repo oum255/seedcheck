@@ -24,9 +24,25 @@ Verified during Phase 0, 2026-10-12/13:
 | cloud-init version shipped per release | 22.04 → `26.1-0ubuntu1~22.04.1`, 24.04 → `26.1-0ubuntu1~24.04.1`, 26.04 → `26.1-0ubuntu3~26.04.1`. |
 | `cloud-init status --wait` works on all three releases | Confirmed: all three reached `status: done` after a plain launch with no user-data. |
 
+Verified during Phase 1, 2026-10-13:
+
+| Fact | Result |
+|---|---|
+| The package installs and its checks pass on the oldest supported Python | Confirmed inside a fresh `ubuntu:22.04` container (Python 3.10.12): `pip install -e ".[dev]"`, `seedcheck --version`, `ruff check .`, `mypy src` and `pytest` all succeed. |
+
 Still to verify in later phases: `cloud-init.user-data` config key acceptance
 (phase 3), `cloud-init status --long --format json` field shape across
 releases (phase 3/4), `cloud-init schema --system` (phase 4).
+
+## `lxc launch` reads YAML from stdin when stdin is not a terminal
+
+Observed during Phase 1: running `lxc launch` from a script fed to bash
+on stdin made `lxc` consume the rest of the script as instance
+configuration and fail with `yaml: line 13: mapping values are not
+allowed in this context`. `lxc launch` (like `lxc init`) reads a YAML
+config from stdin whenever stdin is not a terminal. `LxdClient._run()`
+(phase 3) must therefore always give `lxc` an explicit stdin, either the
+intended input or `subprocess.DEVNULL`, never inherit Seedcheck's own.
 
 ## Operational quirk: occasional `lxc launch` / `lxc init` hang on this dev VM
 
