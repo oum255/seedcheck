@@ -151,3 +151,65 @@ without LXD, on any machine, including CI's Python matrix.
 The user-data is passed as a single `cloud-init.user-data=TEXT`
 argument. Linux limits a single argument to 128 KiB (`MAX_ARG_STRLEN`),
 which is far above realistic cloud-config files.
+
+## Checks (`checks.py`)
+
+Each check runs one or two commands through `lxc exec` and turns their
+output into a `CheckResult(name, status, detail, value)`. Values from
+`seedcheck.yaml` are separate arguments, never part of a shell string;
+only the `command` check runs `sh -c`, because running the user's shell
+command is its whole purpose.
+
+| Check | Command | Notes |
+|---|---|---|
+| schema | `cloud-init schema --system` | Exit 0 is PASS (deprecations still pass). The error lines are indented in this mode, unlike `--config-file`. |
+| cloud-init | `cloud-init status --long --format json` | Exit code ignored. FAIL if `status` is `error` or `errors` is non-empty, or `status` is anything but `done`; WARN if only `recoverable_errors`; missing fields count as empty; duplicate messages are counted once. |
+| package | `dpkg-query -W -f=${Status}\t${Version}\n NAME` | No shell, so `${Status}` reaches dpkg-query literally. One line per architecture; PASS if any is `install ok installed`, and the version is shown in the matrix. |
+| service | `systemctl is-active NAME` | Only stdout matters (it exits non-zero for every state but active). |
+| file | `stat -L -c %F\|%a\|%U PATH`, then `grep -q -F -- TEXT PATH` | `-L` follows symlinks. `%F` is `regular empty file` for an empty file. Modes are compared as octal numbers. Multi-line `contains` text is compared against `cat` output, since grep matches one line at a time. |
+| user | `id -nG NAME` | |
+| command | `sh -c RUN` | Exit code and stdout compared; a command that times out is a FAIL, not an ERROR. |
+
+An exception inside one check (for example the container stopped
+responding) becomes an ERROR cell for that check only. When a release
+never reaches its checks (launch failure, timeout), every planned check
+is reported as SKIP with the reason, so the matrix keeps its shape.
+
+`detail` is collapsed to one line and cut at 200 characters, so a noisy
+command cannot flood the report.
+
+## Differences between releases
+
+Observed while building Seedcheck (October 2026), on arm64:
+
+| | 22.04 jammy | 24.04 noble | 26.04 resolute |
+|---|---|---|---|
+| Python | 3.10.12 | 3.12.3 | 3.14.4 |
+| cloud-init | 26.1-0ubuntu1~22.04.1 | 26.1-0ubuntu1~24.04.1 | 26.1-0ubuntu3~26.04.1 |
+| `cloud-init status` exit for a deprecated key | 0, `done`, no recoverable errors | 2, `degraded done` | 2, `degraded done` |
+| `cloud-init status` JSON | extra `_schema_version` and `schemas` copy | | can repeat recoverable messages |
+| nginx | 1.18.0-6ubuntu14.21 | 1.24.0-2ubuntu7.18 | 1.28.3-2ubuntu1.11 |
+| curl | 7.81.0-1ubuntu1.29 | 8.5.0-2ubuntu10.15 | 8.18.0-1ubuntu2.7 |
+| Ubuntu apt sources | `/etc/apt/sources.list` | deb822 `/etc/apt/sources.list.d/ubuntu.sources` | deb822 `ubuntu.sources` |
+| `systemctl is-active ssh` right after boot | `active` | `inactive` (socket-activated via `ssh.socket` until first connection) | `active` |
+
+The ssh row is a good example of why a service check should state the
+state it expects per use case rather than assume `active`.
+
+Sources added with cloud-init's `apt: sources:` were written as one-line
+`.list` files in `/etc/apt/sources.list.d/` on all three releases (for
+example `git-core.list`), even where Ubuntu's own sources use deb822.
+The `apt-source` example still searches both locations rather than
+assume either.
+
+### Choosing the apt-source example
+
+The first candidate, Grafana k6's repository (`dl.k6.io/deb stable`),
+installs fine on amd64 but publishes no arm64 packages, so it failed on
+the arm64 development VM even though the key and the source were
+configured correctly. The example now uses the git-core Launchpad PPA,
+which builds for amd64 and arm64 and for all three releases. Its source
+line uses `$RELEASE`, which cloud-init replaces with each release's
+codename, and its signing key fingerprint
+(`F911AB184317630C59970973E363C90F8F1B6217`) was read from the
+Launchpad API and is fetched from keyserver.ubuntu.com.
