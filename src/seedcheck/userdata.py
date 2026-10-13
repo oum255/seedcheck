@@ -133,15 +133,19 @@ def _host_schema(path: Path) -> list[Problem]:
         return []
     return [
         Problem(path, Severity.ERROR, f"cloud-init schema: {message}")
-        for message in _schema_errors(proc.stdout + proc.stderr, proc.returncode)
+        for message in schema_errors(proc.stdout + proc.stderr, proc.returncode)
     ]
 
 
-def _schema_errors(output: str, returncode: int) -> list[str]:
-    """Pick the schema error messages out of cloud-init's output, skipping its log lines."""
+def schema_errors(output: str, returncode: int) -> list[str]:
+    """Pick the error messages out of `cloud-init schema` output, skipping its log lines.
+
+    `schema --config-file` prints them flush left; `schema --system` indents them.
+    """
+    lines = (line.strip() for line in output.splitlines())
     messages = [
         line.removeprefix(_SCHEMA_ERROR_PREFIX).strip()
-        for line in output.splitlines()
+        for line in lines
         if line.startswith(_SCHEMA_ERROR_PREFIX)
     ]
     return messages or [f"failed with exit code {returncode}"]
