@@ -39,9 +39,18 @@ Verified during Phase 2, 2026-10-13, against the host's cloud-init
 | Format of host schema errors | All schema errors arrive on one line, `Error: Cloud config schema errors: KEY: MESSAGE, KEY: MESSAGE`, followed by `Error: Invalid schema: user-data`. `userdata.py` keeps only the first kind of line, so log noise never reaches the user. The messages themselves contain commas, so they are not split further. |
 | User-data headers cloud-init accepts | cloud-init's own error for a missing header lists `#!`, `## template: jinja`, `#cloud-boothook`, `#cloud-config`, `#cloud-config-archive`, `#cloud-config-jsonp`, `#include`, `#include-once` and `#part-handler`; `userdata.py` recognizes the same set (plus MIME multi-part). |
 
-Still to verify in later phases: `cloud-init.user-data` config key acceptance
-(phase 3), `cloud-init status --long --format json` field shape across
-releases (phase 3/4), `cloud-init schema --system` (phase 4).
+Verified during Phase 3, 2026-10-13, with LXD 5.21.8 LTS, by launching
+each release twice: once with a deprecated key (`apt_update: true`, a
+recoverable error) and once with a failing `runcmd` (a real error):
+
+| Fact | Result |
+|---|---|
+| LXD accepts the `cloud-init.user-data` instance key | Yes, on all three releases; no fallback to `user.user-data` needed. |
+| `cloud-init status --wait`, `--long`, `--format json` exist everywhere | Yes, on all three releases. |
+| `cloud-init status` exit codes differ between releases | **Confirmed.** For the same deprecated key, 22.04 exits **0** with `status: done` and empty `recoverable_errors`, while 24.04 and 26.04 exit **2** with `extended_status: degraded done` and the deprecation under `recoverable_errors`. All three run cloud-init 26.1, so this is a per-release (SRU) behaviour, not a version difference. A real error exits 1 with `status: error` everywhere. The runner therefore ignores the exit code of `cloud-init status --wait` and the checks read the JSON instead. |
+| JSON shape of `cloud-init status --long --format json` | Differs: 22.04 adds `_schema_version` and a `schemas` copy of every field; 24.04 and 26.04 do not. `errors` is a list of strings; `recoverable_errors` is a mapping of level (`WARNING`, `DEPRECATED`, ...) to a list of messages, and 26.04 can repeat the same message. |
+| `cloud-init schema --system` exists and works as root | Yes, on all three (`lxc exec` runs as root). Exit 0 for valid user-data, also when it only has deprecations; exit 1 with `Error: Cloud config schema errors: ...` otherwise. |
+| `lxc` messages Seedcheck relies on | A missing container gives `Error: ... Instance not found` (exit 1); `lxc exec` passes the command's exit code through unchanged; a missing image gives `Error: Failed instance creation: ... couldn't be found`. |
 
 ## `lxc launch` reads YAML from stdin when stdin is not a terminal
 
@@ -100,3 +109,45 @@ mistake costs milliseconds instead of a three-release run:
    best-effort: the host's cloud-init may be older or newer than the
    one in each release, which is why every release also gets its own
    in-container `schema` check (phase 4).
+
+## How container cleanup is guaranteed
+
+Leaking containers would slowly fill the disk of whoever runs Seedcheck,
+so cleanup is enforced at three levels:
+
+1. `run_release()` deletes its container in a `finally` block, so success,
+   failure, timeout and unexpected exceptions all end with a delete.
+   It deletes even when the launch itself failed, since a failed launch
+   can leave a stopped container behind.
+2. `run_all()` keeps a list of containers that may still exist (a name
+   is added *before* `lxc launch`, removed after a successful delete). On
+   Ctrl+C it deletes whatever is left, then re-raises so the CLI exits 130.
+   With `--keep` it leaves them and prints their names instead.
+3. `LxdClient.delete()` treats "Instance not found" as success, so
+   deleting twice is harmless, and retries while LXD reports the
+   container as busy.
+
+The third point comes from a bug found by testing Ctrl+C against a real
+LXD: interrupting `lxc launch` kills the client, but the LXD server keeps
+creating the container and refuses to delete it ("Instance is busy
+running a create operation"), so the container leaked. `delete()` now
+retries once a second, for up to five minutes (an interrupted launch may
+still be downloading an image). A regression test covers it.
+
+A delete that still fails is reported as a warning naming the exact
+`lxc delete --force` command to run, rather than raised, so one stuck
+container never hides the results of a run.
+
+## Why `lxc` is wrapped in `LxdClient`
+
+All calls to `lxc` go through `LxdClient._run()`. That one method always
+passes an argument list (never a shell string), always sets stdin,
+always applies a timeout, and turns "lxc not installed" and timeouts into
+Seedcheck's own errors. The runner and the checks depend only on the small
+`Lxd` protocol (`launch`, `wait_ready`, `exec`, `pull_file`, `delete`),
+which lets the unit tests use `FakeLxdClient` and run in milliseconds,
+without LXD, on any machine, including CI's Python matrix.
+
+The user-data is passed as a single `cloud-init.user-data=TEXT`
+argument. Linux limits a single argument to 128 KiB (`MAX_ARG_STRLEN`),
+which is far above realistic cloud-config files.
