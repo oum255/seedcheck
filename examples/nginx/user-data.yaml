@@ -1,0 +1,17 @@
+#cloud-config
+package_update: true
+packages:
+  - nginx
+  - curl
+users:
+  - default
+  - name: deploy
+    groups: sudo
+    shell: /bin/bash
+write_files:
+  - path: /etc/motd
+    content: |
+      Provisioned by cloud-init
+    permissions: "0644"
+runcmd:
+  - systemctl enable --now nginx
