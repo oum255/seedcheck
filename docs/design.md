@@ -213,3 +213,34 @@ line uses `$RELEASE`, which cloud-init replaces with each release's
 codename, and its signing key fingerprint
 (`F911AB184317630C59970973E363C90F8F1B6217`) was read from the
 Launchpad API and is fetched from keyserver.ubuntu.com.
+
+## Statuses, exit codes and reports
+
+Each check is PASS, FAIL, WARN (passed with a caveat: cloud-init
+recoverable errors), SKIP (never evaluated because the release failed
+earlier) or ERROR (an infrastructure problem). A release takes the worst
+status of its checks, or ERROR if it never got through them.
+
+| Exit code | When |
+|---|---|
+| 0 | every check of every release is PASS or WARN |
+| 1 | at least one check is FAIL, and nothing is ERROR |
+| 2 | bad usage, invalid `seedcheck.yaml` or invalid user-data, found before any container starts |
+| 3 | LXD is unusable, or anything ended in ERROR |
+| 130 | interrupted with Ctrl+C (containers are still deleted) |
+
+When a run has both a FAIL and an ERROR, the exit code is 3, not 1. An
+ERROR means the results are incomplete, so CI should report "the test
+infrastructure broke" rather than "the configuration is wrong". The
+reports still show every FAIL.
+
+`report.py` holds only pure functions of a `RunResult`, so the table,
+Markdown and JSON are tested against exact expected strings. Rows keep
+the order checks were first seen (schema, cloud-init, then the order of
+`seedcheck.yaml`); a check missing for one release shows as SKIP. Color
+is used only when stdout is a terminal and `NO_COLOR` is unset or empty
+(https://no-color.org); it wraps the status word after padding, so the
+columns stay aligned. Progress lines go to stderr, so stdout carries only
+the table and can be redirected or piped. The Markdown report uses
+status icons and escapes `|`, so it renders correctly in a GitHub job
+summary.
