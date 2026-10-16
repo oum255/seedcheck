@@ -1,9 +1,42 @@
 # Design notes
 
-This file tracks how Seedcheck works, why it is built the way it is, and
-facts about the environment that were verified during development rather
-than assumed. It is updated as each phase of the implementation roadmap
-is completed.
+This file explains how Seedcheck works, why it is built the way it is, and
+records facts about the environment that were verified during development
+rather than assumed.
+
+- [Module responsibilities](#module-responsibilities)
+- [Why `lxc` is wrapped in `LxdClient`](#why-lxc-is-wrapped-in-lxdclient)
+- [How container cleanup is guaranteed](#how-container-cleanup-is-guaranteed)
+- [Statuses, exit codes and reports](#statuses-exit-codes-and-reports)
+- [Static validation](#static-validation-seedcheck-validate) and [checks](#checks-checkspy)
+- [Differences between releases](#differences-between-releases)
+- [Edge cases and where they are tested](#edge-cases-and-where-they-are-tested)
+- [Debian packaging](#debian-packaging) and [CI and releases](#continuous-integration-and-releases)
+- Facts verified during the build: [appendix](#appendix-facts-verified-roadmap-section-annexe),
+  [`lxc launch` and stdin](#lxc-launch-reads-yaml-from-stdin-when-stdin-is-not-a-terminal),
+  [a development VM quirk](#operational-quirk-occasional-lxc-launch--lxc-init-hang-on-this-dev-vm)
+
+## Module responsibilities
+
+Data flows in one direction: configuration in, containers in the middle,
+reports out. Each module has one job.
+
+| Module | Responsibility |
+|---|---|
+| `cli.py` | Parses arguments, runs the steps in order (load config, validate user-data, check LXD, run, report) and turns each kind of failure into an exit code. The only module that prints the matrix. |
+| `config.py` | Reads `seedcheck.yaml` into frozen dataclasses (`Config`, `PackageCheck`, ...) and rejects anything invalid with a `ConfigError` naming the key. |
+| `userdata.py` | Static checks of the user-data file: encoding, `#cloud-config` header, YAML shape, and the host's `cloud-init schema` when available. Returns a list of `Problem`s rather than raising, so all of them are shown at once. |
+| `releases.py` | The table of supported releases (version, codename, image, Python) and `resolve()`. Adding a release means adding one line here. |
+| `lxd.py` | `LxdClient`, the only code that runs `lxc`, and the `Lxd` protocol that the rest of the code depends on. |
+| `runner.py` | The lifecycle of one release (launch, wait, check, collect logs, delete) and of a whole run; turns infrastructure failures into ERROR results and guarantees cleanup. |
+| `checks.py` | One function per check type, each `(client, container, spec) -> CheckResult`, plus `run_checks()` to run them in order. |
+| `report.py` | Pure functions from a `RunResult` to a terminal table, Markdown, JSON and an exit code. |
+| `models.py` | The result types shared by the above: `Status`, `CheckResult`, `ReleaseResult`, `RunResult`. |
+| `errors.py` | `SeedcheckError` and its subclasses, so the CLI can map each kind of failure to an exit code in one place. |
+
+Only `PyYAML` is needed at run time; everything else (argument parsing,
+the table, JSON, subprocesses) uses the standard library, which keeps the
+Debian package down to one dependency besides Python.
 
 ## Development environment
 
