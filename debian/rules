@@ -1,0 +1,12 @@
+#!/usr/bin/make -f
+
+# Integration tests need a working LXD, which a package build does not have.
+export PYBUILD_TEST_ARGS = -m "not integration"
+# The unit tests read the shipped examples, which pybuild does not copy by itself.
+# Remove them afterwards: pybuild installs whatever is left in the build directory,
+# and examples/ must not end up in /usr/lib/python3/dist-packages.
+export PYBUILD_BEFORE_TEST = cp -r {dir}/examples {build_dir}
+export PYBUILD_AFTER_TEST = rm -rf {build_dir}/examples
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild

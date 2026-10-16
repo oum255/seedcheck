@@ -1,0 +1,27 @@
+Source: seedcheck
+Section: admin
+Priority: optional
+Maintainer: Oumayma Haddour <oumaymahaddour@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-setuptools,
+               python3-yaml,
+               python3-pytest
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/oum255/seedcheck
+Vcs-Browser: https://github.com/oum255/seedcheck
+Vcs-Git: https://github.com/oum255/seedcheck.git
+
+Package: seedcheck
+Architecture: all
+Depends: ${python3:Depends}, ${misc:Depends}, python3-yaml
+Recommends: snapd
+Description: test cloud-init configurations across Ubuntu releases
+ Seedcheck launches a cloud-init user-data file in LXD containers on
+ several Ubuntu releases, checks the result inside each one, and reports
+ a pass/fail matrix per release.
+ .
+ It needs LXD, which Ubuntu ships as a snap: sudo snap install lxd.
