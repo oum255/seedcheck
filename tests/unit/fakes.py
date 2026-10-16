@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 from seedcheck.errors import LxdError
 from seedcheck.lxd import ExecResult
-
-ExecHandler = Callable[[str, list[str]], ExecResult]
 
 
 class FakeLxdClient:
@@ -16,6 +13,8 @@ class FakeLxdClient:
 
     - launch_errors / ready_errors: image -> exception raised by launch / wait_ready
     - exec_results: argv tuple -> ExecResult or exception, for any container
+    - image_exec_results: (image, argv tuple) -> result for one release only;
+      takes precedence over exec_results
     - files: remote path -> content returned by pull_file
     - unavailable: exception raised by ensure_available
     """
@@ -30,6 +29,7 @@ class FakeLxdClient:
         self.exec_results: dict[tuple[str, ...], ExecResult | BaseException] = {
             ("cloud-init", "--version"): ExecResult(0, "/usr/bin/cloud-init 26.1-test\n", ""),
         }
+        self.image_exec_results: dict[tuple[str, tuple[str, ...]], ExecResult | BaseException] = {}
         self.files: dict[str, str] = {
             "/var/log/cloud-init.log": "cloud-init log\n",
             "/var/log/cloud-init-output.log": "cloud-init output\n",
@@ -55,7 +55,10 @@ class FakeLxdClient:
 
     def exec(self, name: str, argv: list[str], timeout: float) -> ExecResult:
         self.calls.append(("exec", name, *argv))
-        result = self.exec_results.get(tuple(argv), ExecResult(0, "", ""))
+        key = (self.alive.get(name, ""), tuple(argv))
+        result = self.image_exec_results.get(key) or self.exec_results.get(
+            tuple(argv), ExecResult(0, "", "")
+        )
         if isinstance(result, BaseException):
             raise result
         return result
