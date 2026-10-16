@@ -244,3 +244,41 @@ columns stay aligned. Progress lines go to stderr, so stdout carries only
 the table and can be redirected or piped. The Markdown report uses
 status icons and escapes `|`, so it renders correctly in a GitHub job
 summary.
+
+## Edge cases and where they are tested
+
+Every edge case in the roadmap has a defined behaviour and an end-to-end
+test in `tests/unit/test_edge_cases.py`, which drives `seedcheck run`
+the way a user would. The module tests cover the same rules in more
+detail.
+
+| Situation | Behaviour | Test |
+|---|---|---|
+| Config missing, unreadable or invalid YAML | exit 2, path and line number | `test_missing_config_file_exits_2_naming_the_path`, `test_invalid_yaml_config_exits_2_with_the_line_number` |
+| Unknown key in `seedcheck.yaml` | exit 2 naming the key, with a suggestion | `test_unknown_key_typo_exits_2_naming_the_key` |
+| `user_data` path does not exist | exit 2 with the resolved path | `test_missing_user_data_file_exits_2_showing_the_resolved_path` |
+| No `#cloud-config` header | exit 2, explains cloud-init would ignore it | `test_missing_cloud_config_header_is_rejected_with_an_explanation` |
+| Valid YAML, invalid schema | exit 2 from the host check; `schema` row FAIL per release | `test_schema_error_found_by_host_cloud_init_exits_2`, `test_schema_error_found_inside_a_release_fails_its_schema_row` |
+| Unsupported or duplicate release | exit 2 listing supported releases | `test_unsupported_or_duplicate_release_exits_2_listing_supported_ones` |
+| `lxc` missing, LXD not initialized, permission denied | exit 3 with advice for each | `test_unusable_lxd_exits_3_with_advice_for_each_cause` |
+| Image cannot be downloaded | that release ERROR, others run, exit 3 | `test_image_that_cannot_be_downloaded_errors_only_that_release` |
+| Container never ready / cloud-init timeout | ERROR, checks SKIP, logs kept, container deleted | `test_timeout_errors_the_release_skips_its_checks_keeps_logs_and_deletes_it` |
+| cloud-init finishes with errors | `cloud-init` FAIL with the first error, other checks still run | `test_cloud_init_errors_fail_its_row_but_other_checks_still_run` |
+| Only recoverable errors | `cloud-init` WARN, exit 0 | `test_recoverable_errors_only_warn_and_the_run_still_exits_0` |
+| Older `cloud-init status` JSON | missing fields count as empty | `test_older_cloud_init_status_json_with_missing_fields_does_not_crash` |
+| Package on one release only | FAIL in that column only | `test_package_missing_on_one_release_fails_only_that_column` |
+| Same package, different versions | all PASS, each cell shows its version | `test_same_package_with_different_versions_passes_and_shows_each_version` |
+| No network in the container | `cloud-init` FAIL with apt's failure | `test_no_network_in_the_container_shows_cloud_init_apt_failure` |
+| File check on a missing path or a directory | FAIL "not found" / "not a regular file" | `test_file_check_on_a_missing_path_or_a_directory_fails` |
+| Command with huge output | detail truncated | `test_command_with_huge_output_has_its_detail_truncated` |
+| Ctrl+C | every container deleted, exit 130 | `test_ctrl_c_deletes_every_container_and_exits_130` (also tested by hand against a real LXD, see the cleanup section) |
+| Unexpected exception in one release | container deleted, ERROR, others continue | `test_unexpected_exception_errors_one_release_and_the_others_continue` |
+| Two runs at once | no name collision (random suffix) | `test_two_runs_at_the_same_time_never_reuse_a_container_name` |
+| Output redirected, or `NO_COLOR` set | no color codes | `test_redirected_output_or_no_color_has_no_color_codes` |
+| Empty `checks` section | only `schema` and `cloud-init` rows | `test_empty_checks_section_shows_only_schema_and_cloud_init` |
+
+One thing writing these tests surfaced: `seedcheck.lxd` and
+`seedcheck.userdata` both import the standard `shutil` and `subprocess`
+modules, and in Python those are one shared object. Monkeypatching
+`lxd.shutil.which` therefore also changes what `userdata` sees, so the
+tests answer only for the specific command they fake.
