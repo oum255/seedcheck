@@ -282,3 +282,53 @@ One thing writing these tests surfaced: `seedcheck.lxd` and
 modules, and in Python those are one shared object. Monkeypatching
 `lxd.shutil.which` therefore also changes what `userdata` sees, so the
 tests answer only for the specific command they fake.
+
+## Debian packaging
+
+Seedcheck is a native Debian package (`3.0 (native)`, version `0.1.0`
+with no Debian revision), built with `dh` and pybuild's pyproject plugin,
+which builds a wheel from `pyproject.toml` and unpacks it into the
+package. It is `Architecture: all`: pure Python, so one `.deb` serves
+amd64 and arm64. It is built on 24.04 and installs on all three releases
+because it lands in `/usr/lib/python3/dist-packages`, which every
+supported Python 3 searches, and dh_python3 turns its requirements into
+`Depends: python3-yaml, python3:any`.
+
+| File | Purpose |
+|---|---|
+| `debian/control` | Source and binary package metadata, build dependencies, runtime dependencies. `Recommends: snapd`, since LXD is a snap and cannot be a `Depends`. |
+| `debian/rules` | The build recipe: `dh` with pybuild. Runs the unit tests during the build, excluding the integration tests (no LXD there). |
+| `debian/changelog` | Package version history; its version must match `__version__` and the git tag. |
+| `debian/copyright` | Machine-readable (DEP-5) license. Debian calls the MIT license `Expat`, since "MIT" names several different texts. |
+| `debian/source/format` | `3.0 (native)`: the package is developed in this repository, so there is no separate upstream tarball. |
+| `debian/seedcheck.1`, `debian/seedcheck.manpages` | The man page, so `man seedcheck` works. |
+| `debian/seedcheck.examples` | Installs `examples/` to `/usr/share/doc/seedcheck/examples/`. |
+
+`PYBUILD_NAME` is deliberately not set: it is meant for library packages
+named `python3-*`, and setting it here would install files into a
+`debian/python3-seedcheck/` directory that no package uses.
+
+Verified during Phase 7, 2026-10-16:
+
+| Fact | Result |
+|---|---|
+| `pybuild-plugin-pyproject` is available on the build machine | Yes on 24.04 (`6.20240401`). |
+| pybuild runs the unit tests and honours `PYBUILD_TEST_ARGS` | Yes: the build log shows `python3.12 -m pytest -m "not integration"` and `287 passed, 5 deselected`. |
+| A package built on 24.04 installs and runs on 22.04, 24.04 and 26.04 | Yes: `scripts/smoke-install.sh` passes on all three, with Python 3.10.12, 3.12.3 and 3.14.4. |
+| lintian | No errors or warnings, and no overrides. The only warning on the first build, `no-manual-page`, was fixed by writing a man page rather than overridden. |
+
+**A packaging bug lintian did not catch.** The unit tests read
+`examples/`, which pybuild does not copy into its build directory, so
+`debian/rules` copies it there before the tests. But pybuild installs
+whatever is left in the build directory, so the first package shipped a
+stray top-level `examples` module in `/usr/lib/python3/dist-packages`,
+which could clash with any other package doing the same. It was found by
+reading `dpkg -c`. `debian/rules` now removes the copy after the tests;
+the examples ship in `/usr/share/doc/seedcheck/examples/` instead; and
+`scripts/build-deb.sh` fails if anything but `seedcheck` lands in
+`dist-packages`. That guard was checked by reintroducing the bug in a
+scratch copy and watching the build fail.
+
+On 26.04, `apt-get install` prints `Solving dependencies...`: 26.04 ships
+apt 3 with its new solver. It made no difference to installing the
+package.

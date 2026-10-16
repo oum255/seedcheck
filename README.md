@@ -8,6 +8,20 @@ cloud-init to finish, runs checks inside each container (packages, services,
 files, users, commands and cloud-init's own error report), and prints a
 pass/fail matrix per release. Work in progress.
 
+## Requirements
+
+Seedcheck runs on Ubuntu 22.04 or newer and needs LXD. Ubuntu ships LXD as
+a snap, so the Debian package cannot depend on it; install it first:
+
+```bash
+sudo snap install lxd
+sudo lxd init --auto
+sudo usermod -aG lxd "$USER"   # then log out and back in
+```
+
+`scripts/setup-lxd.sh` does the same. If LXD is missing or unusable,
+`seedcheck run` stops with exit code 3 and says which step is missing.
+
 ## Tests
 
 Measured on 2026-10-16 (macOS with Python 3.13, and again on Ubuntu 22.04
