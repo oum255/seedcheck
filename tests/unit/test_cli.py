@@ -333,3 +333,16 @@ def test_redirected_output_has_no_color(
     monkeypatch.delenv("NO_COLOR", raising=False)
     main(["run", str(config), "--release", "24.04"], client=client)
     assert "\033[" not in capsys.readouterr().out
+
+
+def test_python_dash_m_seedcheck_runs_the_cli(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import runpy
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["seedcheck", "releases"])
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("seedcheck", run_name="__main__")
+    assert exc.value.code == EXIT_OK
+    assert "resolute" in capsys.readouterr().out
