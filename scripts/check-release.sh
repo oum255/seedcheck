@@ -33,10 +33,11 @@ if ! [[ "$tag_version" == "$python_version" && "$python_version" == "$debian_ver
   exit 1
 fi
 
-# The section runs from "## [VERSION]" to the next "## [" heading.
+# The section runs from "## [VERSION]" to the next "## [" heading, or to the
+# link definitions ("[0.1.0]: https://...") at the end of the file.
 awk -v heading="## [${tag_version}]" '
   index($0, heading) == 1 { found = 1; next }
-  found && /^## \[/ { exit }
+  found && (/^## \[/ || /^\[[^]]+\]: /) { exit }
   found { print }
 ' CHANGELOG.md >"$notes"
 if ! grep -q '[^[:space:]]' "$notes"; then
