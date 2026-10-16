@@ -332,3 +332,46 @@ scratch copy and watching the build fail.
 On 26.04, `apt-get install` prints `Solving dependencies...`: 26.04 ships
 apt 3 with its new solver. It made no difference to installing the
 package.
+
+## Continuous integration and releases
+
+`.github/workflows/ci.yml` runs on every push and pull request, on
+`ubuntu-24.04` runners:
+
+| Job | What it proves |
+|---|---|
+| `lint` | ruff (lint and format), mypy strict, shellcheck on every script. |
+| `unit` | The unit tests pass, with at least 90% coverage, on Python 3.10, 3.12 and 3.14, the versions of the three supported releases. |
+| `build-deb` | `scripts/build-deb.sh` builds the package lintian-clean; the `.deb` is uploaded as an artifact. |
+| `install-test` | For each release, the `.deb` installs with apt in a fresh LXD container and runs (`scripts/smoke-install.sh`). |
+| `matrix` | The `.deb` is installed on the runner itself, `seedcheck run` runs the nginx example on all three releases, and the Markdown matrix is appended to the job summary. The broken example must exit 1. Reports and cloud-init logs are uploaded. |
+
+`concurrency` cancels a run when a newer push arrives on the same branch,
+and every job has a `timeout-minutes`, so a hung container cannot hold a
+runner for hours.
+
+LXD is set up with `canonical/setup-lxd`, pinned to a commit SHA (the
+`v1` tag could move) and to the `5.21/stable` snap channel, the LTS used
+during development, instead of its default `latest/candidate`. Reading its
+`action.yml` (October 2026) answered the roadmap's open questions: it
+grants the LXD socket to the `adm` group, which the runner user already
+belongs to, so no `sudo` or re-login is needed; and it inserts ACCEPT
+rules for `lxdbr0` into Docker's `DOCKER-USER` chain, which defuses the
+known trap where Docker's `FORWARD DROP` policy cuts containers off the
+network. No extra firewall step was needed: the first CI run passed with
+networked `apt` installs on all three releases.
+
+Verified on the first CI run (2026-10-16):
+
+| Fact | Result |
+|---|---|
+| `canonical/setup-lxd` exists and handles permissions and networking | Yes (see above). |
+| `setup-python` offers Python 3.10 and 3.14 on `ubuntu-24.04` | Yes: 3.10.22, 3.12.15 and 3.14.8. |
+| Package versions on the amd64 runner | Slightly newer SRUs than on the arm64 development VM a few days earlier (e.g. curl `7.81.0-1ubuntu1.30` vs `.29` on 22.04), which is why the matrix prints versions rather than hard-coding them. |
+
+`.github/workflows/release.yml` runs when a `v*` tag is pushed.
+`scripts/check-release.sh` refuses to continue unless the tag,
+`__version__` and `debian/changelog` name the same version and
+`CHANGELOG.md` has a section for it; that section becomes the release
+notes. The workflow then builds the `.deb` and attaches it to a new
+GitHub release.

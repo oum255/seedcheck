@@ -1,5 +1,7 @@
 # Seedcheck
 
+[![CI](https://github.com/oum255/seedcheck/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/oum255/seedcheck/actions/workflows/ci.yml)
+
 Seedcheck is a command-line tool that answers one question: *does this
 cloud-init configuration work on every Ubuntu release I care about?* Given a
 cloud-init user-data file and a list of expectations, it validates the file,
