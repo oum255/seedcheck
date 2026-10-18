@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seedcheck"
+dynamic = ["version"]
+description = "Test cloud-init configurations across Ubuntu releases in LXD containers"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [{ name = "Oumayma Haddour" }]
+requires-python = ">=3.10"
+dependencies = ["PyYAML"]
+classifiers = [
+    "Environment :: Console",
+    "License :: Other/Proprietary License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Installation/Setup",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "types-PyYAML"]
+
+[project.scripts]
+seedcheck = "seedcheck.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/oum255/seedcheck"
+
+[tool.setuptools.dynamic]
+version = { attr = "seedcheck.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a working LXD installation (deselected by default)"]
+addopts = "-m 'not integration'"
+
+[tool.coverage.run]
+source = ["seedcheck"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true

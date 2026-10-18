@@ -1,0 +1,12 @@
+#cloud-config
+# Add the git-core PPA with cloud-init's apt module, then install git from it.
+# $RELEASE is replaced by cloud-init with each release's codename.
+apt:
+  sources:
+    git-core:
+      source: "deb [signed-by=$KEY_FILE] https://ppa.launchpadcontent.net/git-core/ppa/ubuntu $RELEASE main"
+      keyid: F911AB184317630C59970973E363C90F8F1B6217
+      keyserver: keyserver.ubuntu.com
+package_update: true
+packages:
+  - git

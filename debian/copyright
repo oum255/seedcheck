@@ -1,0 +1,11 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: seedcheck
+Upstream-Contact: Oumayma Haddour <oumaymahaddour@gmail.com>
+Source: https://github.com/oum255/seedcheck
+
+Files: *
+Copyright: 2026 Oumayma Haddour <oumaymahaddour@gmail.com>
+License: proprietary
+ All rights reserved. This code is public so that people can read it, but
+ no license is granted: you may not copy, modify, distribute, sell or reuse
+ it, in whole or in part, without written permission from the author.

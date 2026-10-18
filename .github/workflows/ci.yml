@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A new push cancels the older run on the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # No color codes in the logs.
+  NO_COLOR: "1"
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy src
+      - run: shellcheck scripts/*.sh
+
+  unit:
+    # Python versions of Ubuntu 22.04, 24.04 and 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest --cov=seedcheck --cov-report=term-missing --cov-report=xml --cov-fail-under=90
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-python${{ matrix.python }}
+          path: coverage.xml
+
+  build-deb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper dh-python pybuild-plugin-pyproject \
+            python3-all python3-setuptools python3-yaml python3-pytest lintian
+      - run: scripts/build-deb.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  install-test:
+    # Install the .deb in a fresh container of each release.
+    needs: build-deb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ["22.04", "24.04", "26.04"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 5.21/stable
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb
+          path: dist
+      - run: scripts/smoke-install.sh "${{ matrix.release }}" dist/seedcheck_*_all.deb
+
+  matrix:
+    # Install the .deb on the runner and run the whole matrix with it.
+    needs: build-deb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
+        with:
+          channel: 5.21/stable
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb
+          path: dist
+      - name: Install the .deb
+        run: sudo apt-get install -y ./dist/seedcheck_*_all.deb
+      - name: Run the nginx example on 22.04, 24.04 and 26.04
+        run: >
+          seedcheck run examples/nginx/seedcheck.yaml
+          --markdown report.md --json report.json --artifacts-dir logs
+      - name: Add the matrix to the job summary
+        if: always()
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY" || echo "No report was written." >> "$GITHUB_STEP_SUMMARY"
+      - name: Run the broken example, which must exit 1
+        run: |
+          set +e
+          seedcheck run examples/broken/seedcheck.yaml --markdown broken.md
+          code=$?
+          set -e
+          {
+            echo
+            echo "<details><summary>broken example (expected to fail, exit code $code)</summary>"
+            echo
+            cat broken.md
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 1 ]; then
+            echo "::error::examples/broken should exit 1, got $code"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: matrix-reports
+          path: |
+            report.md
+            report.json
+            broken.md
+            logs/

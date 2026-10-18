@@ -1,0 +1,111 @@
+.TH SEEDCHECK 1 "October 2026" "seedcheck 0.1.0" "User Commands"
+.SH NAME
+seedcheck \- test cloud-init configurations across Ubuntu releases
+.SH SYNOPSIS
+.B seedcheck run
+.I CONFIG
+.RB [ \-\-release
+.IR REL ]...
+.RB [ \-\-markdown
+.IR PATH ]
+.RB [ \-\-json
+.IR PATH ]
+.RB [ \-\-artifacts\-dir
+.IR DIR ]
+.RB [ \-\-timeout
+.IR SECONDS ]
+.RB [ \-\-keep ]
+.RB [ \-v ]
+.br
+.B seedcheck validate
+.I CONFIG
+.br
+.B seedcheck releases
+.br
+.B seedcheck \-\-version
+.SH DESCRIPTION
+.B seedcheck
+answers one question: does this cloud-init configuration work on every
+Ubuntu release I care about?
+Given a
+.I seedcheck.yaml
+file that points to a cloud-init user-data file and lists expectations, it
+validates the user-data, launches one LXD container per Ubuntu release with
+it, waits for cloud-init to finish, runs checks inside each container
+(installed packages, service states, files, users, custom commands and
+cloud-init's own error report), prints a pass/fail matrix with checks as
+rows and releases as columns, and always deletes its containers.
+.SH COMMANDS
+.TP
+.BI run " CONFIG"
+Validate, launch, check and report.
+.TP
+.BI validate " CONFIG"
+Statically validate the configuration and its user-data, without launching
+anything. Does not need LXD.
+.TP
+.B releases
+List the supported releases, their codenames and LXD images.
+.SH OPTIONS
+.TP
+.BI \-\-release " REL"
+Only test this release, given as a version (22.04) or a codename (jammy).
+Repeatable. Overrides the configuration.
+.TP
+.BI \-\-markdown " PATH"
+Also write the matrix as Markdown, suitable for a GitHub job summary.
+.TP
+.BI \-\-json " PATH"
+Also write the full results as JSON.
+.TP
+.BI \-\-artifacts\-dir " DIR"
+Save each container's cloud-init logs under
+.IR DIR / RELEASE /.
+.TP
+.BI \-\-timeout " SECONDS"
+How long to wait for each release; overrides the configuration.
+.TP
+.B \-\-keep
+Do not delete the containers, for debugging.
+.TP
+.BR \-v ", " \-\-verbose
+Show every lxc command and its output.
+.SH EXIT STATUS
+.TP
+.B 0
+Every check on every release passed or only warned.
+.TP
+.B 1
+At least one check failed.
+.TP
+.B 2
+Invalid usage, configuration or user-data, found before any container started.
+.TP
+.B 3
+Infrastructure error: LXD is unusable, or a release ended in error.
+.TP
+.B 130
+Interrupted; the containers are still deleted.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+When set to a non-empty value, the matrix is printed without color.
+Color is also disabled when standard output is not a terminal.
+.SH EXAMPLES
+.nf
+seedcheck validate examples/nginx/seedcheck.yaml
+seedcheck run examples/nginx/seedcheck.yaml \-\-markdown report.md
+seedcheck run seedcheck.yaml \-\-release noble \-\-keep \-v
+.fi
+.SH NOTES
+LXD is distributed as a snap, so it cannot be a package dependency.
+Install and initialize it with
+.BR "sudo snap install lxd && sudo lxd init \-\-auto" ,
+then add yourself to the
+.B lxd
+group.
+.SH SEE ALSO
+.BR lxc (1),
+.BR cloud-init (1)
+.PP
+https://github.com/oum255/seedcheck

@@ -1,0 +1,25 @@
+# Seedcheck configuration for the nginx demo.
+user_data: user-data.yaml            # path relative to this file (required)
+releases: ["22.04", "24.04", "26.04"] # optional; this is the default
+timeout: 600                         # seconds to wait for cloud-init per release
+
+checks:
+  packages:                          # each must be installed
+    - nginx
+    - curl
+  services:                          # each must be in the given state (default: active)
+    - name: nginx
+      state: active
+  files:                             # path must exist; other keys are optional
+    - path: /etc/motd
+      contains: "Provisioned by cloud-init"
+      mode: "0644"
+      owner: root
+  users:                             # user must exist; groups are optional
+    - name: deploy
+      groups: [sudo]
+  commands:                          # arbitrary command run inside the container
+    - name: nginx answers on port 80
+      run: curl -fsS http://localhost
+      expect_exit: 0
+      expect_stdout_contains: nginx
